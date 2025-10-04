@@ -348,8 +348,6 @@ services:
       - LOCUST_WEB_PORT
       - GRAFANA_PORT
       - GRAFANA_HOST
-      - JAEGER_UI_PORT
-      - JAEGER_HOST
       - OTEL_COLLECTOR_HOST
       - IMAGE_PROVIDER_HOST
       - IMAGE_PROVIDER_PORT
@@ -367,8 +365,6 @@ services:
       frontend:
         condition: service_started
       load-generator:
-        condition: service_started
-      jaeger:
         condition: service_started
       grafana:
         condition: service_started
@@ -425,7 +421,7 @@ services:
       - LOCUST_HOST
       - LOCUST_HEADLESS
       - LOCUST_AUTOSTART
-      - LOCUST_BROWSER_TRAFFIC_ENABLED=true
+      - LOCUST_BROWSER_TRAFFIC_ENABLED=false
       - OTEL_EXPORTER_OTLP_ENDPOINT
       - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
       - OTEL_RESOURCE_ATTRIBUTES
@@ -739,31 +735,6 @@ services:
   # ********************
   # Telemetry Components
   # ********************
-  # Jaeger
-  jaeger:
-    image: ${JAEGERTRACING_IMAGE}
-    container_name: jaeger
-    command:
-      - "--config=file:/etc/jaeger/config.yml"
-    deploy:
-      resources:
-        limits:
-          memory: 1200M
-    restart: unless-stopped
-    ports:
-      - "${JAEGER_UI_PORT}"
-      - "${JAEGER_GRPC_PORT}"
-    environment:
-      - JAEGER_HOST
-      - JAEGER_GRPC_PORT
-      - PROMETHEUS_ADDR
-      - OTEL_COLLECTOR_HOST
-      - OTEL_COLLECTOR_PORT_HTTP
-      - MEMORY_MAX_TRACES=25000
-    volumes:
-      - ./src/jaeger/config.yml:/etc/jaeger/config.yml
-    logging: *logging
-
   # Grafana
   grafana:
     image: ${GRAFANA_IMAGE}
@@ -782,6 +753,24 @@ services:
       - "${GRAFANA_PORT}"
     logging: *logging
 
+  # Tempo
+  tempo:
+    image: ${TEMPO_IMAGE}
+    container_name: tempo
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./src/tempo/tempo-config.yaml:/etc/tempo.yaml
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+    restart: unless-stopped
+    ports:
+      - "3200"   # tempo http
+      - "4317"   # otlp grpc
+      - "4318"   # otlp http
+    logging: *logging
+
   # OpenTelemetry Collector
   otel-collector:
     image: ${COLLECTOR_CONTRIB_IMAGE}
@@ -798,11 +787,12 @@ services:
       - ${DOCKER_SOCK}:/var/run/docker.sock:ro
       - ${OTEL_COLLECTOR_CONFIG}:/etc/otelcol-config.yml
       - ${OTEL_COLLECTOR_CONFIG_EXTRAS}:/etc/otelcol-config-extras.yml
+      - ./otel-traces:/traces
     ports:
       - "${OTEL_COLLECTOR_PORT_GRPC}"
       - "${OTEL_COLLECTOR_PORT_HTTP}"
     depends_on:
-      jaeger:
+      tempo:
         condition: service_started
       opensearch:
         condition: service_healthy
@@ -829,11 +819,9 @@ services:
       - --web.console.libraries=/etc/prometheus/console_libraries
       - --storage.tsdb.retention.time=1h
       - --config.file=/etc/prometheus/prometheus-config.yaml
-      - --storage.tsdb.path=/prometheus
-      - --web.enable-lifecycle
-      - --web.route-prefix=/
       - --web.enable-otlp-receiver
       - --enable-feature=exemplar-storage
+      - --enable-feature=native-histograms
     volumes:
       - ./src/prometheus/prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
     deploy:

@@ -16,3 +16,18 @@
 #    pipelines:
 #      traces:
 #        exporters: [spanmetrics, otlphttp/example]
+#
+
+exporters:
+  file/traces:
+    path: /traces/traces.json
+    format: json
+    rotation:
+      max_megabytes: 100
+      max_days: 7
+      max_backups: 100
+
+service:
+  pipelines:
+    traces:
+      exporters: [spanmetrics, otlp, debug, file/traces]

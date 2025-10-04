@@ -120,7 +120,7 @@ receivers:
 exporters:
   debug:
   otlp:
-    endpoint: "jaeger:4317"
+    endpoint: "tempo:4317"
     tls:
       insecure: true
   otlphttp/prometheus:

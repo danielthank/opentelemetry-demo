@@ -4,39 +4,35 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import logging
 import os
 import random
 import uuid
-import logging
 
-from locust import HttpUser, task, between
-from locust_plugins.users.playwright import PlaywrightUser, pw, PageWithRetry, event
-
-from opentelemetry import context, baggage, trace
+from locust import HttpUser, between, task
+from locust_plugins.users.playwright import PageWithRetry, PlaywrightUser, pw
+from openfeature import api
+from openfeature.contrib.hook.opentelemetry import TracingHook
+from openfeature.contrib.provider.ofrep import OFREPProvider
+from opentelemetry import baggage, context, trace
+from opentelemetry._logs import set_logger_provider
 from opentelemetry.context import Context
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.jinja2 import Jinja2Instrumentor
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrumentor
+from opentelemetry.instrumentation.urllib3 import URLLib3Instrumentor
 from opentelemetry.metrics import set_meter_provider
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.jinja2 import Jinja2Instrumentor
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
-from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrumentor
-from opentelemetry.instrumentation.urllib3 import URLLib3Instrumentor
-from opentelemetry.instrumentation.logging import LoggingInstrumentor
-from opentelemetry._logs import set_logger_provider
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk.resources import Resource
-
-from openfeature import api
-from openfeature.contrib.provider.ofrep import OFREPProvider
-from openfeature.contrib.hook.opentelemetry import TracingHook
-
-from playwright.async_api import Route, Request
+from playwright.async_api import Request, Route
 
 # Configure tracer provider first (needed for trace context in logs)
 tracer_provider = TracerProvider()
@@ -79,10 +75,12 @@ base_url = f"http://{os.environ.get('FLAGD_HOST', 'localhost')}:{os.environ.get(
 api.set_provider(OFREPProvider(base_url=base_url))
 api.add_hooks([TracingHook()])
 
+
 def get_flagd_value(FlagName):
     # Initialize OpenFeature
     client = api.get_client()
     return client.get_integer_value(FlagName, 0)
+
 
 categories = [
     "binoculars",
@@ -107,11 +105,12 @@ products = [
     "HQTGWGPNH4",
 ]
 
-people_file = open('people.json')
+people_file = open("people.json")
 people = json.load(people_file)
 
+
 class WebsiteUser(HttpUser):
-    wait_time = between(1, 10)
+    wait_time = between(1, 5)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -126,14 +125,20 @@ class WebsiteUser(HttpUser):
     @task(10)
     def browse_product(self):
         product = random.choice(products)
-        with self.tracer.start_as_current_span("user_browse_product", context=Context(), attributes={"product.id": product}):
+        with self.tracer.start_as_current_span(
+            "user_browse_product", context=Context(), attributes={"product.id": product}
+        ):
             logging.info(f"User browsing product: {product}")
             self.client.get("/api/products/" + product)
 
     @task(3)
     def get_recommendations(self):
         product = random.choice(products)
-        with self.tracer.start_as_current_span("user_get_recommendations", context=Context(), attributes={"product.id": product}):
+        with self.tracer.start_as_current_span(
+            "user_get_recommendations",
+            context=Context(),
+            attributes={"product.id": product},
+        ):
             logging.info(f"User getting recommendations for product: {product}")
             params = {
                 "productIds": [product],
@@ -143,7 +148,9 @@ class WebsiteUser(HttpUser):
     @task(3)
     def get_ads(self):
         category = random.choice(categories)
-        with self.tracer.start_as_current_span("user_get_ads", context=Context(), attributes={"category": str(category)}):
+        with self.tracer.start_as_current_span(
+            "user_get_ads", context=Context(), attributes={"category": str(category)}
+        ):
             logging.info(f"User getting ads for category: {category}")
             params = {
                 "contextKeys": [category],
@@ -162,7 +169,11 @@ class WebsiteUser(HttpUser):
             user = str(uuid.uuid1())
         product = random.choice(products)
         quantity = random.choice([1, 2, 3, 4, 5, 10])
-        with self.tracer.start_as_current_span("user_add_to_cart", context=Context(), attributes={"user.id": user, "product.id": product, "quantity": quantity}):
+        with self.tracer.start_as_current_span(
+            "user_add_to_cart",
+            context=Context(),
+            attributes={"user.id": user, "product.id": product, "quantity": quantity},
+        ):
             logging.info(f"User {user} adding {quantity} of product {product} to cart")
             self.client.get("/api/products/" + product)
             cart_item = {
@@ -177,7 +188,9 @@ class WebsiteUser(HttpUser):
     @task(1)
     def checkout(self):
         user = str(uuid.uuid1())
-        with self.tracer.start_as_current_span("user_checkout_single", context=Context(), attributes={"user.id": user}):
+        with self.tracer.start_as_current_span(
+            "user_checkout_single", context=Context(), attributes={"user.id": user}
+        ):
             self.add_to_cart(user=user)
             checkout_person = random.choice(people)
             checkout_person["userId"] = user
@@ -188,8 +201,11 @@ class WebsiteUser(HttpUser):
     def checkout_multi(self):
         user = str(uuid.uuid1())
         item_count = random.choice([2, 3, 4])
-        with self.tracer.start_as_current_span("user_checkout_multi", context=Context(),
-                                            attributes={"user.id": user, "item.count": item_count}):
+        with self.tracer.start_as_current_span(
+            "user_checkout_multi",
+            context=Context(),
+            attributes={"user.id": user, "item.count": item_count},
+        ):
             for i in range(item_count):
                 self.add_to_cart(user=user)
             checkout_person = random.choice(people)
@@ -201,7 +217,11 @@ class WebsiteUser(HttpUser):
     def flood_home(self):
         flood_count = get_flagd_value("loadGeneratorFloodHomepage")
         if flood_count > 0:
-            with self.tracer.start_as_current_span("user_flood_home",  context=Context(), attributes={"flood.count": flood_count}):
+            with self.tracer.start_as_current_span(
+                "user_flood_home",
+                context=Context(),
+                attributes={"flood.count": flood_count},
+            ):
                 logging.info(f"User flooding homepage {flood_count} times")
                 for _ in range(0, flood_count):
                     self.client.get("/")
@@ -216,9 +236,12 @@ class WebsiteUser(HttpUser):
             self.index()
 
 
-browser_traffic_enabled = os.environ.get("LOCUST_BROWSER_TRAFFIC_ENABLED", "").lower() in ("true", "yes", "on")
+browser_traffic_enabled = os.environ.get(
+    "LOCUST_BROWSER_TRAFFIC_ENABLED", ""
+).lower() in ("true", "yes", "on")
 
 if browser_traffic_enabled:
+
     class WebsiteBrowserUser(PlaywrightUser):
         headless = True  # to use a headless browser, without a GUI
 
@@ -229,38 +252,43 @@ if browser_traffic_enabled:
         @task
         @pw
         async def open_cart_page_and_change_currency(self, page: PageWithRetry):
-            with self.tracer.start_as_current_span("browser_change_currency", context=Context()):
-                try:
-                    page.on("console", lambda msg: print(msg.text))
-                    await page.route('**/*', add_baggage_header)
-                    await page.goto("/cart", wait_until="domcontentloaded")
-                    await page.select_option('[name="currency_code"]', 'CHF')
-                    await page.wait_for_timeout(2000)  # giving the browser time to export the traces
-                    logging.info("Currency changed to CHF")
-                except Exception as e:
-                    logging.error(f"Error in change currency task: {str(e)}")
+            try:
+                page.on("console", lambda msg: print(msg.text))
+                await page.route("**/*", add_baggage_header)
+                await page.goto("/cart", wait_until="domcontentloaded")
+                await page.select_option('[name="currency_code"]', "CHF")
+                await page.wait_for_timeout(
+                    2000
+                )  # giving the browser time to export the traces
+                logging.info("Currency changed to CHF")
+            except Exception as e:
+                logging.error(f"Error in change currency task: {str(e)}")
 
         @task
         @pw
         async def add_product_to_cart(self, page: PageWithRetry):
-            with self.tracer.start_as_current_span("browser_add_to_cart", context=Context()):
-                try:
-                    page.on("console", lambda msg: print(msg.text))
-                    await page.route('**/*', add_baggage_header)
-                    await page.goto("/", wait_until="domcontentloaded")
-                    await page.click('p:has-text("Roof Binoculars")')
-                    await page.wait_for_load_state("domcontentloaded")
-                    await page.click('button:has-text("Add To Cart")')
-                    await page.wait_for_load_state("domcontentloaded")
-                    await page.wait_for_timeout(2000)  # giving the browser time to export the traces
-                    logging.info("Product added to cart successfully")
-                except Exception as e:
-                    logging.error(f"Error in add to cart task: {str(e)}")
+            try:
+                page.on("console", lambda msg: print(msg.text))
+                await page.route("**/*", add_baggage_header)
+                await page.goto("/", wait_until="domcontentloaded")
+                await page.click('p:has-text("Roof Binoculars")')
+                await page.wait_for_load_state("domcontentloaded")
+                await page.click('button:has-text("Add To Cart")')
+                await page.wait_for_load_state("domcontentloaded")
+                await page.wait_for_timeout(
+                    2000
+                )  # giving the browser time to export the traces
+                logging.info("Product added to cart successfully")
+            except Exception as e:
+                logging.error(f"Error in add to cart task: {str(e)}")
+
 
 async def add_baggage_header(route: Route, request: Request):
-    existing_baggage = request.headers.get('baggage', '')
+    existing_baggage = request.headers.get("baggage", "")
     headers = {
         **request.headers,
-        'baggage': ', '.join(filter(None, (existing_baggage, 'synthetic_request=true')))
+        "baggage": ", ".join(
+            filter(None, (existing_baggage, "synthetic_request=true"))
+        ),
     }
     await route.continue_(headers=headers)
