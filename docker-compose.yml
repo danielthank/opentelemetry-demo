@@ -350,6 +350,8 @@ services:
       - LOCUST_WEB_PORT
       - GRAFANA_PORT
       - GRAFANA_HOST
+      - JAEGER_UI_PORT
+      - JAEGER_HOST
       - OTEL_COLLECTOR_HOST
       - IMAGE_PROVIDER_HOST
       - IMAGE_PROVIDER_PORT
@@ -368,6 +370,8 @@ services:
       frontend:
         condition: service_started
       load-generator:
+        condition: service_started
+      jaeger:
         condition: service_started
       grafana:
         condition: service_started
@@ -826,6 +830,31 @@ services:
       - "${GRAFANA_PORT}"
     logging: *logging
 
+  # Jaeger
+  jaeger:
+    image: ${JAEGERTRACING_IMAGE}
+    container_name: jaeger
+    command:
+      - "--config=file:/etc/jaeger/config.yml"
+    deploy:
+      resources:
+        limits:
+          memory: 1200M
+    restart: unless-stopped
+    ports:
+      - "${JAEGER_UI_PORT}"
+      - "${JAEGER_GRPC_PORT}"
+    environment:
+      - JAEGER_HOST
+      - JAEGER_GRPC_PORT
+      - PROMETHEUS_ADDR
+      - OTEL_COLLECTOR_HOST
+      - OTEL_COLLECTOR_PORT_HTTP
+      - MEMORY_MAX_TRACES=25000
+    volumes:
+      - ./src/jaeger/config.yml:/etc/jaeger/config.yml
+    logging: *logging
+
   tempo:
     image: ${TEMPO_IMAGE}
     container_name: tempo
@@ -835,7 +864,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 500M
+          memory: 1200M
     restart: unless-stopped
     ports:
       - "3200"   # tempo http
@@ -866,6 +895,8 @@ services:
       - "${OTEL_COLLECTOR_PORT_GRPC}"
       - "${OTEL_COLLECTOR_PORT_HTTP}"
     depends_on:
+      jaeger:
+        condition: service_started
       tempo:
         condition: service_started
       opensearch:

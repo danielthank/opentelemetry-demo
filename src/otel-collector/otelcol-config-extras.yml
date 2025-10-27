@@ -35,4 +35,4 @@ exporters:
 service:
   pipelines:
     traces:
-      exporters: [otlp/tempo]
+      exporters: [otlp/jaeger, otlp/tempo]
