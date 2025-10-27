@@ -26,8 +26,13 @@ exporters:
       max_megabytes: 100
       max_days: 7
       max_backups: 100
+  otelarrow/host:
+    endpoint: "host.docker.internal:4317"
+    compression: none
+    tls:
+      insecure: true
 
 service:
   pipelines:
     traces:
-      exporters: [spanmetrics, otlp, debug, file/traces]
+      exporters: [otlp/tempo]

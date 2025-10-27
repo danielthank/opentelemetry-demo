@@ -826,7 +826,6 @@ services:
       - "${GRAFANA_PORT}"
     logging: *logging
 
-  # Tempo
   tempo:
     image: ${TEMPO_IMAGE}
     container_name: tempo
@@ -854,6 +853,8 @@ services:
           memory: 200M
     restart: unless-stopped
     command: [ "--config=/etc/otelcol-config.yml", "--config=/etc/otelcol-config-extras.yml" ]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     user: 0:0
     volumes:
       - ${HOST_FILESYSTEM}:/hostfs:ro
