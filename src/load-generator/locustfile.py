@@ -122,7 +122,7 @@ class WebsiteUser(HttpUser):
             logging.info("User accessing index page")
             self.client.get("/")
 
-    @task(10)
+    @task(8)
     def browse_product(self):
         product = random.choice(products)
         with self.tracer.start_as_current_span(
@@ -203,7 +203,7 @@ class WebsiteUser(HttpUser):
             }
             self.client.post("/api/cart", json=cart_item)
 
-    @task(1)
+    @task(3)
     def checkout(self):
         user = str(uuid.uuid1())
         with self.tracer.start_as_current_span(
@@ -215,7 +215,7 @@ class WebsiteUser(HttpUser):
             self.client.post("/api/checkout", json=checkout_person)
             logging.info(f"Checkout completed for user {user}")
 
-    @task(1)
+    @task(3)
     def checkout_multi(self):
         user = str(uuid.uuid1())
         item_count = random.choice([2, 3, 4])
