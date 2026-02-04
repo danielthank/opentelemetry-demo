@@ -1,0 +1,172 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# CloudLab OTel Collector Configuration
+# Optimized for high-throughput trace collection to file
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "http://*"
+            - "https://*"
+
+  # Host metrics from this node
+  hostmetrics:
+    root_path: /hostfs
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+          system.cpu.logical.count:
+            enabled: true
+      disk:
+      load:
+      filesystem:
+        exclude_mount_points:
+          mount_points:
+            - /dev/*
+            - /proc/*
+            - /sys/*
+            - /run/k3s/containerd/*
+            - /var/lib/docker/*
+            - /var/lib/kubelet/*
+            - /snap/*
+          match_type: regexp
+        exclude_fs_types:
+          fs_types:
+            - autofs
+            - binfmt_misc
+            - bpf
+            - cgroup2
+            - configfs
+            - debugfs
+            - devpts
+            - devtmpfs
+            - fusectl
+            - hugetlbfs
+            - iso9660
+            - mqueue
+            - nsfs
+            - overlay
+            - proc
+            - procfs
+            - pstore
+            - rpc_pipefs
+            - securityfs
+            - selinuxfs
+            - squashfs
+            - sysfs
+            - tracefs
+          match_type: strict
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+          system.memory.limit:
+            enabled: true
+      network:
+      paging:
+        metrics:
+          system.paging.usage:
+            enabled: true
+      processes:
+      process:
+        mute_process_exe_error: true
+        mute_process_io_error: true
+        mute_process_user_error: true
+      system:
+        metrics:
+          system.uptime:
+            enabled: true
+
+exporters:
+  debug:
+    verbosity: basic
+
+  # File-based trace export for offline analysis
+  file/traces:
+    path: /traces/traces.json
+    format: json
+    rotation:
+      max_megabytes: 500     # 500MB per file
+      max_backups: 200       # Keep 200 rotated files = 100GB max
+    flush_interval: 5s
+
+  # Optional: Also send to Jaeger for real-time visualization
+  otlp/jaeger:
+    endpoint: "localhost:4317"
+    tls:
+      insecure: true
+
+  # Send metrics to Prometheus on node2
+  otlphttp/prometheus:
+    endpoint: "http://${env:PROMETHEUS_HOST}:${env:PROMETHEUS_PORT}/api/v1/otlp"
+    tls:
+      insecure: true
+
+  # Send logs to OpenSearch
+  opensearch:
+    logs_index: otel-logs
+    logs_index_time_format: "yyyy-MM-dd"
+    http:
+      endpoint: "http://opensearch:9200"
+      tls:
+        insecure: true
+
+processors:
+  batch:
+    send_batch_size: 10000   # Larger batches for efficiency
+    timeout: 5s
+
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  resourcedetection:
+    detectors: [env, docker, system]
+
+  transform:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          # could be removed when https://github.com/vercel/next.js/pull/64852 is fixed upstream
+          - replace_pattern(name, "\\?.*", "")
+          - replace_match(name, "GET /api/products/*", "GET /api/products/{productId}")
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, transform, batch]
+      exporters: [file/traces, otlp/jaeger]
+
+    metrics:
+      receivers: [otlp, hostmetrics]
+      processors: [resourcedetection, memory_limiter, batch]
+      exporters: [otlphttp/prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [resourcedetection, memory_limiter, batch]
+      exporters: [opensearch]
+
+  telemetry:
+    metrics:
+      level: detailed
+      readers:
+        - periodic:
+            interval: 10000
+            timeout: 5000
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: http://localhost:4318

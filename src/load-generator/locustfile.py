@@ -110,7 +110,7 @@ people = json.load(people_file)
 
 
 class WebsiteUser(HttpUser):
-    wait_time = between(1, 5)
+    wait_time = between(0.5, 2)  # Reduced wait time for higher throughput
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -203,7 +203,7 @@ class WebsiteUser(HttpUser):
             }
             self.client.post("/api/cart", json=cart_item)
 
-    @task(3)
+    @task(5)
     def checkout(self):
         user = str(uuid.uuid1())
         with self.tracer.start_as_current_span(
@@ -215,7 +215,7 @@ class WebsiteUser(HttpUser):
             self.client.post("/api/checkout", json=checkout_person)
             logging.info(f"Checkout completed for user {user}")
 
-    @task(3)
+    @task(5)
     def checkout_multi(self):
         user = str(uuid.uuid1())
         item_count = random.choice([2, 3, 4])
