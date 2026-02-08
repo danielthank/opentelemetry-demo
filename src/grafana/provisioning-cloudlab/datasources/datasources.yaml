@@ -1,0 +1,54 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# CloudLab datasources - connects to services across nodes
+
+apiVersion: 1
+
+datasources:
+  # Prometheus on node2 (localhost)
+  - name: Prometheus
+    uid: webstore-metrics
+    type: prometheus
+    url: http://prometheus:9090
+    editable: true
+    isDefault: true
+    jsonData:
+      timeInterval: "60s"
+      exemplarTraceIdDestinations:
+        - datasourceUid: webstore-traces
+          name: trace_id
+
+  # Tempo on node1
+  - name: Tempo
+    uid: webstore-traces
+    type: tempo
+    url: http://10.10.1.2:3200
+    editable: true
+    isDefault: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: webstore-logs-loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+        filterBySpanID: false
+        tags:
+          - key: "service.name"
+            value: "service_name"
+      serviceMap:
+        datasourceUid: webstore-metrics
+
+  # Loki on node1 (for Grafana Logs Drilldown)
+  - name: Loki
+    uid: webstore-logs-loki
+    type: loki
+    url: http://10.10.1.2:3100
+    editable: true
+    isDefault: false
+    jsonData:
+      derivedFields:
+        - datasourceUid: webstore-traces
+          matcherRegex: "traceID=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"

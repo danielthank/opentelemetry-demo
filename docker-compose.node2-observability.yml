@@ -54,12 +54,13 @@ services:
     environment:
       - "GF_INSTALL_PLUGINS=grafana-opensearch-datasource"
       - "GF_SERVER_HTTP_ADDR=0.0.0.0"
+      - "GF_SERVER_ROOT_URL=http://128.110.217.184:3000/"
+      - "GF_SERVER_SERVE_FROM_SUB_PATH=false"
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
       - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
       - "GF_AUTH_DISABLE_LOGIN_FORM=true"
     volumes:
-      - ./src/grafana/grafana.ini:/etc/grafana/grafana.ini
-      - ./src/grafana/provisioning/:/etc/grafana/provisioning/
+      - ./src/grafana/provisioning-cloudlab/:/etc/grafana/provisioning/
       - grafana-data:/var/lib/grafana
     ports:
       - "3000:3000"

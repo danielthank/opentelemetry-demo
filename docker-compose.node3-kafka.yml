@@ -1,0 +1,123 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Node3: Kafka + Async Consumers + Load Generator
+# Kafka consumers (accounting, fraud-detection) and load-generator
+# moved here to reduce CPU/memory pressure on Node 0.
+
+x-default-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "2"
+    tag: "{{.Name}}"
+
+networks:
+  default:
+    name: opentelemetry-demo
+    driver: bridge
+
+services:
+  # Kafka used by Checkout (Node 0), Accounting, and Fraud Detection services
+  kafka:
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-kafka
+    container_name: kafka
+    deploy:
+      resources:
+        limits:
+          memory: 620M
+    restart: unless-stopped
+    environment:
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://10.10.1.4:9092
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://10.10.1.2:4318
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+      - OTEL_RESOURCE_ATTRIBUTES
+      - OTEL_SERVICE_NAME=kafka
+      - KAFKA_HEAP_OPTS=-Xmx400m -Xms400m
+      - _JAVA_OPTIONS
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: nc -z localhost 9092
+      start_period: 10s
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    logging: *logging
+
+  # Accounting service (Kafka consumer, connects to PostgreSQL on Node 0)
+  accounting:
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-accounting
+    container_name: accounting
+    deploy:
+      resources:
+        limits:
+          memory: 120M
+    restart: unless-stopped
+    environment:
+      - KAFKA_ADDR=kafka:${KAFKA_PORT}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://10.10.1.2:4318
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+      - OTEL_RESOURCE_ATTRIBUTES
+      - OTEL_SERVICE_NAME=accounting
+      - DB_CONNECTION_STRING=Host=10.10.1.1;Username=otelu;Password=otelp;Database=${POSTGRES_DB}
+      - OTEL_DOTNET_AUTO_TRACES_ENTITYFRAMEWORKCORE_INSTRUMENTATION_ENABLED=false
+    depends_on:
+      kafka:
+        condition: service_healthy
+    logging: *logging
+
+  # Fraud Detection service (Kafka consumer, connects to flagd on Node 0)
+  fraud-detection:
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-fraud-detection
+    container_name: fraud-detection
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    restart: unless-stopped
+    environment:
+      - FLAGD_HOST=10.10.1.1
+      - FLAGD_PORT=${FLAGD_PORT}
+      - KAFKA_ADDR=kafka:${KAFKA_PORT}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://10.10.1.2:4318
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+      - OTEL_INSTRUMENTATION_KAFKA_EXPERIMENTAL_SPAN_ATTRIBUTES=true
+      - OTEL_INSTRUMENTATION_MESSAGING_EXPERIMENTAL_RECEIVE_TELEMETRY_ENABLED=true
+      - OTEL_RESOURCE_ATTRIBUTES
+      - OTEL_SERVICE_NAME=fraud-detection
+    depends_on:
+      kafka:
+        condition: service_healthy
+    logging: *logging
+
+  # Load Generator (connects to frontend-proxy on Node 0, flagd on Node 0)
+  load-generator:
+    image: ${IMAGE_NAME}:${DEMO_VERSION}-load-generator
+    container_name: load-generator
+    deploy:
+      resources:
+        limits:
+          memory: 2000M
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8089:8089"
+    environment:
+      - LOCUST_WEB_PORT
+      - LOCUST_USERS
+      - LOCUST_HOST=http://10.10.1.1:8080
+      - LOCUST_HEADLESS=false
+      - LOCUST_AUTOSTART
+      - LOCUST_BROWSER_TRAFFIC_ENABLED=false
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://10.10.1.2:4317
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+      - OTEL_RESOURCE_ATTRIBUTES
+      - OTEL_SERVICE_NAME=load-generator
+      - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+      - LOCUST_WEB_HOST=0.0.0.0
+      - FLAGD_HOST=10.10.1.1
+      - FLAGD_PORT=${FLAGD_PORT}
+      - FLAGD_OFREP_PORT=${FLAGD_OFREP_PORT}
+    logging: *logging
