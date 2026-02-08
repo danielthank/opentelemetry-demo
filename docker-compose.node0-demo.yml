@@ -82,7 +82,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 20M
+          memory: 100M
     restart: unless-stopped
     ports:
       - "${CHECKOUT_PORT}"
@@ -97,7 +97,7 @@ services:
       - PRODUCT_CATALOG_ADDR
       - SHIPPING_ADDR
       - KAFKA_ADDR
-      - GOMEMLIMIT=16MiB
+      - GOMEMLIMIT=80MiB
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://10.10.1.2:4317
       - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
       - OTEL_RESOURCE_ATTRIBUTES
@@ -224,7 +224,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 65M
+          memory: 512M
     restart: unless-stopped
     ports:
       - "${ENVOY_PORT}:${ENVOY_PORT}"
@@ -252,12 +252,14 @@ services:
       - FLAGD_PORT
       - FLAGD_UI_HOST
       - FLAGD_UI_PORT
+    entrypoint: ["/bin/sh", "-c", "envsubst < envoy.tmpl.yaml > envoy.yaml && envoy -c envoy.yaml --concurrency 2"]
     depends_on:
       frontend:
         condition: service_started
       flagd-ui:
         condition: service_started
     dns_search: ""
+    logging: *logging
 
   # image-provider
   image-provider:
@@ -310,7 +312,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 20M
+          memory: 100M
     restart: unless-stopped
     ports:
       - "${PRODUCT_CATALOG_PORT}"
@@ -318,7 +320,7 @@ services:
       - PRODUCT_CATALOG_PORT
       - FLAGD_HOST
       - FLAGD_PORT
-      - GOMEMLIMIT=16MiB
+      - GOMEMLIMIT=80MiB
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://10.10.1.2:4317
       - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
       - OTEL_RESOURCE_ATTRIBUTES
@@ -339,7 +341,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 100M
+          memory: 300M
     restart: unless-stopped
     ports:
       - "${PRODUCT_REVIEWS_PORT}"
@@ -504,7 +506,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 50M
+          memory: 200M
     restart: unless-stopped
     environment:
       - FLAGD_HOST
@@ -523,7 +525,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 80M
+          memory: 300M
     restart: unless-stopped
     ports:
       - "${POSTGRES_PORT}:${POSTGRES_PORT}"

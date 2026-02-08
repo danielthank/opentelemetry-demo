@@ -54,7 +54,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 120M
+          memory: 300M
     restart: unless-stopped
     environment:
       - KAFKA_ADDR=kafka:${KAFKA_PORT}
@@ -109,6 +109,7 @@ services:
       - LOCUST_USERS
       - LOCUST_HOST=http://10.10.1.1:8080
       - LOCUST_HEADLESS=false
+      - LOCUST_SPAWN_RATE
       - LOCUST_AUTOSTART
       - LOCUST_BROWSER_TRAFFIC_ENABLED=false
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://10.10.1.2:4317

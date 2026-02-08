@@ -54,6 +54,7 @@ usage() {
     echo "  clean        - Stop services and clean up data"
     echo "  ping [node]  - Check if nodes are reachable"
     echo "  reboot [node] - Reboot nodes"
+    echo "  ssh <node> <command>  - Run a command on a node (e.g., ssh 3 docker ps)"
     echo ""
     echo "Environment variables:"
     echo "  SSH_USER     - SSH username (default: current user)"
@@ -250,6 +251,7 @@ start() {
     echo ""
     echo "Access points:"
     echo "  Frontend:    http://$NODE0_IP:8080"
+    echo "  Envoy Admin: http://$NODE0_IP:10000"
     echo "  Load Gen UI: http://$NODE3_IP:8089"
     echo "  Grafana:     http://$NODE2_IP:3000"
     echo "  Prometheus:  http://$NODE2_IP:9090"
@@ -268,7 +270,7 @@ stop() {
             2) compose_file="docker-compose.node2-observability.yml" ;;
             3) compose_file="docker-compose.node3-kafka.yml" ;;
         esac
-        run_on_node "$ip" "cd $REPO_PATH && docker compose -f $compose_file down" "node$n"
+        run_on_node "$ip" "cd $REPO_PATH && docker compose -f $compose_file down --remove-orphans" "node$n"
     }
 
     if [ -n "$target" ]; then
@@ -391,16 +393,19 @@ collect_telemetry() {
 }
 
 reset_telemetry() {
+    local force=${1:-}
     echo -e "${GREEN}=== Resetting telemetry data on node1 ===${NC}"
 
     # Check current data
     echo -e "${YELLOW}Current telemetry data:${NC}"
     ssh $SSH_OPTS $SSH_USER@$NODE1_IP "du -sh /data/otel/*/ 2>/dev/null || echo '  (none)'"
 
-    read -p "Delete all telemetry files (traces, metrics, logs)? (y/N) " confirm
-    if [ "$confirm" != "y" ]; then
-        echo "Aborted"
-        return
+    if [ "$force" != "-y" ]; then
+        read -p "Delete all telemetry files (traces, metrics, logs)? (y/N) " confirm
+        if [ "$confirm" != "y" ]; then
+            echo "Aborted"
+            return
+        fi
     fi
 
     ssh $SSH_OPTS $SSH_USER@$NODE1_IP "sudo find /data/otel -name '*.json' -delete"
@@ -546,7 +551,7 @@ case "${1:-}" in
         collect_telemetry
         ;;
     reset-telemetry)
-        reset_telemetry
+        reset_telemetry "${2:-}"
         ;;
     monitor)
         monitor "${2:-all}" "${3:-}"
@@ -562,6 +567,12 @@ case "${1:-}" in
         ;;
     reboot)
         reboot_all "${2:-}"
+        ;;
+    ssh)
+        _ssh_node=$2
+        node_ip=$(get_node_ip "$_ssh_node")
+        shift 2
+        run_on_node "$node_ip" "cd $REPO_PATH && $*" "node$_ssh_node"
         ;;
     *)
         usage
