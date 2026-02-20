@@ -1,0 +1,24 @@
+# CloudLab GenT Decompression Collector
+# Receives compressed models from otelcol-compress and generates traces for Tempo.
+
+receivers:
+  gent:
+    source_type: grpc
+    model_server_endpoint: otelcol-compress:9090
+    continuous_generation: true
+    metadata_predictor: statistical
+
+exporters:
+  otlp:
+    endpoint: tempo-gent:4317
+    tls:
+      insecure: true
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    traces/decompress:
+      receivers: [gent]
+      exporters: [otlp]

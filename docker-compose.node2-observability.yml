@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Node2: Prometheus + Grafana (Observability Stack)
-# This provides metrics storage and visualization.
+# Two Grafana instances: one for original traces, one for GenT-reconstructed.
 
 x-default-logging: &logging
   driver: "json-file"
@@ -42,10 +42,10 @@ services:
       - "9090:9090"
     logging: *logging
 
-  # Grafana
-  grafana:
+  # Grafana — original (raw) traces
+  grafana-original:
     image: ${GRAFANA_IMAGE}
-    container_name: grafana
+    container_name: grafana-original
     deploy:
       resources:
         limits:
@@ -54,18 +54,43 @@ services:
     environment:
       - "GF_INSTALL_PLUGINS=grafana-opensearch-datasource"
       - "GF_SERVER_HTTP_ADDR=0.0.0.0"
-      - "GF_SERVER_ROOT_URL=http://128.110.217.184:3000/"
+      - "GF_SERVER_ROOT_URL=http://128.110.217.140:3000/"
       - "GF_SERVER_SERVE_FROM_SUB_PATH=false"
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
       - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
       - "GF_AUTH_DISABLE_LOGIN_FORM=true"
     volumes:
       - ./src/grafana/provisioning-cloudlab/:/etc/grafana/provisioning/
-      - grafana-data:/var/lib/grafana
+      - grafana-original-data:/var/lib/grafana
     ports:
       - "3000:3000"
     logging: *logging
 
+  # Grafana — GenT-reconstructed traces
+  grafana-gent:
+    image: ${GRAFANA_IMAGE}
+    container_name: grafana-gent
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+    restart: unless-stopped
+    environment:
+      - "GF_INSTALL_PLUGINS=grafana-opensearch-datasource"
+      - "GF_SERVER_HTTP_ADDR=0.0.0.0"
+      - "GF_SERVER_ROOT_URL=http://128.110.217.140:3001/"
+      - "GF_SERVER_SERVE_FROM_SUB_PATH=false"
+      - "GF_AUTH_ANONYMOUS_ENABLED=true"
+      - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
+      - "GF_AUTH_DISABLE_LOGIN_FORM=true"
+    volumes:
+      - ./src/grafana/provisioning-cloudlab-gent/:/etc/grafana/provisioning/
+      - grafana-gent-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    logging: *logging
+
 volumes:
   prometheus-data:
-  grafana-data:
+  grafana-original-data:
+  grafana-gent-data:

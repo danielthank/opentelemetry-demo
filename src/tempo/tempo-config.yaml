@@ -47,6 +47,7 @@ metrics_generator:
       cluster: docker-compose
   storage:
     path: /var/tempo/generator/wal
+  metrics_ingestion_time_range_slack: 5m
   processor:
     local_blocks:
       filter_server_spans: false

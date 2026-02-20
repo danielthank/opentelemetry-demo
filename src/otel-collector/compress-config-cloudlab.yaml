@@ -1,0 +1,24 @@
+# CloudLab GenT Compression Collector
+# Receives traces forwarded from the main OTel collector and compresses them.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4319
+
+exporters:
+  gent:
+    flush_interval_seconds: 60
+    max_buffered_traces: 100000
+    model_server_port: 9090
+    stratified_sampling: true
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    traces/compress:
+      receivers: [otlp]
+      exporters: [gent]

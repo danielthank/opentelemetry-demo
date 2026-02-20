@@ -5,10 +5,10 @@
 set -e
 
 # CloudLab node configuration
-NODE0_IP="128.110.217.190"  # External IP for node0 (demo services)
-NODE1_IP="128.110.217.177"  # External IP for node1 (collector)
-NODE2_IP="128.110.217.184"  # External IP for node2 (observability)
-NODE3_IP="128.110.217.176"  # External IP for node3 (kafka + consumers)
+NODE0_IP="128.110.217.149"  # External IP for node0 (demo services)
+NODE1_IP="128.110.217.118"  # External IP for node1 (collector)
+NODE2_IP="128.110.217.140"  # External IP for node2 (observability)
+NODE3_IP="128.110.217.116"  # External IP for node3 (kafka + consumers)
 
 NODE0_INTERNAL="10.10.1.1"
 NODE1_INTERNAL="10.10.1.2"
@@ -16,13 +16,11 @@ NODE2_INTERNAL="10.10.1.3"
 NODE3_INTERNAL="10.10.1.4"
 
 # SSH user (change if different)
-SSH_USER="${SSH_USER:-$(whoami)}"
+SSH_USER="${SSH_USER:-yenruc}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_aws}"
 
-# SSH options (uses ssh-agent by default, or set SSH_KEY to override)
-SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10"
-if [ -n "${SSH_KEY:-}" ]; then
-    SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
-fi
+# SSH options
+SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10 -i $SSH_KEY"
 
 # Colors
 RED='\033[0;31m'
@@ -42,6 +40,7 @@ usage() {
     echo "  docker [node]   - Install Docker + Compose"
     echo "  config [node]   - Configure system limits"
     echo "  sync [node]     - Sync local repo"
+    echo "  build-gent      - Build otelcol-gent image and transfer to node1"
     echo "  deploy [node]   - Pull Docker images"
     echo "  start           - Start all services (ordered)"
     echo "  stop [node]     - Stop services"
@@ -190,6 +189,34 @@ sync_repo() {
     echo -e "${GREEN}Sync complete${NC}"
 }
 
+build_gent() {
+    echo -e "${GREEN}=== Building otelcol-gent image ===${NC}"
+
+    # Build from the otelcol-gent directory (relative to the workload/opentelemetry-demo scripts dir)
+    local gent_dir
+    gent_dir="$(cd "$(dirname "$0")/../../.." && pwd)/otelcol-gent"
+
+    if [ ! -d "$gent_dir" ]; then
+        echo -e "${RED}otelcol-gent directory not found at $gent_dir${NC}"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}Building Docker image from $gent_dir...${NC}"
+    docker build -t otelcol-gent:latest "$gent_dir"
+
+    echo -e "${YELLOW}Saving image to /tmp/otelcol-gent.tar.gz...${NC}"
+    docker save otelcol-gent:latest | gzip > /tmp/otelcol-gent.tar.gz
+
+    echo -e "${YELLOW}Transferring image to node1 ($NODE1_IP)...${NC}"
+    rsync -avz --progress -e "ssh $SSH_OPTS" /tmp/otelcol-gent.tar.gz "$SSH_USER@$NODE1_IP:/tmp/otelcol-gent.tar.gz"
+
+    echo -e "${YELLOW}Loading image on node1...${NC}"
+    run_on_node $NODE1_IP "gunzip -c /tmp/otelcol-gent.tar.gz | docker load && rm -f /tmp/otelcol-gent.tar.gz" "node1"
+
+    rm -f /tmp/otelcol-gent.tar.gz
+    echo -e "${GREEN}otelcol-gent image built and loaded on node1${NC}"
+}
+
 deploy() {
     local target=${1:-}
 
@@ -250,11 +277,12 @@ start() {
     echo -e "${GREEN}=== All services started ===${NC}"
     echo ""
     echo "Access points:"
-    echo "  Frontend:    http://$NODE0_IP:8080"
-    echo "  Envoy Admin: http://$NODE0_IP:10000"
-    echo "  Load Gen UI: http://$NODE3_IP:8089"
-    echo "  Grafana:     http://$NODE2_IP:3000"
-    echo "  Prometheus:  http://$NODE2_IP:9090"
+    echo "  Frontend:         http://$NODE0_IP:8080"
+    echo "  Envoy Admin:      http://$NODE0_IP:10000"
+    echo "  Load Gen UI:      http://$NODE3_IP:8089"
+    echo "  Grafana (orig):   http://$NODE2_IP:3000"
+    echo "  Grafana (gent):   http://$NODE2_IP:3001"
+    echo "  Prometheus:       http://$NODE2_IP:9090"
 }
 
 stop() {
@@ -528,6 +556,9 @@ case "${1:-}" in
         ;;
     sync)
         sync_repo "${2:-}"
+        ;;
+    build-gent)
+        build_gent
         ;;
     deploy)
         deploy "${2:-}"

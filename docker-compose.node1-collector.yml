@@ -1,8 +1,10 @@
 # Copyright The OpenTelemetry Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# Node1: OTel Collector + File-based Trace Storage
-# This receives telemetry from node0 and writes traces to files.
+# Node1: OTel Collector + File-based Trace Storage + GenT Pipeline
+# This receives telemetry from node0, writes traces to files, stores in
+# Tempo (original), and runs the GenT compress/decompress pipeline into
+# Tempo (gent) for side-by-side comparison.
 
 x-default-logging: &logging
   driver: "json-file"
@@ -46,17 +48,19 @@ services:
       - PROMETHEUS_PORT=9090
       - GOMEMLIMIT=900MiB
     depends_on:
-      tempo:
+      tempo-original:
         condition: service_started
       loki:
         condition: service_started
+      otelcol-compress:
+        condition: service_started
 
-  # Tempo for trace storage and visualization
-  tempo:
+  # Tempo for original (raw) traces
+  tempo-original:
     image: ${TEMPO_IMAGE}
-    container_name: tempo
+    container_name: tempo-original
     command: [ "-config.file=/etc/tempo.yaml" ]
-    user: "0:0"  # Run as root to avoid permission issues
+    user: "0:0"
     volumes:
       - ./src/tempo/tempo-config.yaml:/etc/tempo.yaml
       - /data/tempo:/var/tempo
@@ -69,6 +73,61 @@ services:
       - "3200:3200"   # tempo http
       - "4320:4317"   # otlp grpc (different port to avoid conflict with collector)
     logging: *logging
+
+  # Tempo for GenT-reconstructed traces
+  tempo-gent:
+    image: ${TEMPO_IMAGE}
+    container_name: tempo-gent
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    user: "0:0"
+    volumes:
+      - ./src/tempo/tempo-config.yaml:/etc/tempo.yaml
+      - /data/tempo-gent:/var/tempo
+    deploy:
+      resources:
+        limits:
+          memory: 1200M
+    restart: unless-stopped
+    ports:
+      - "3201:3200"   # tempo http (offset from original)
+      - "4321:4317"   # otlp grpc
+    logging: *logging
+
+  # GenT compression collector — receives traces, builds models
+  otelcol-compress:
+    image: otelcol-gent:latest
+    container_name: otelcol-compress
+    command: [ "--config=file:/etc/otelcol/config.yaml" ]
+    volumes:
+      - ./src/otel-collector/compress-config-cloudlab.yaml:/etc/otelcol/config.yaml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+    restart: unless-stopped
+    ports:
+      - "4319:4319"   # OTLP gRPC ingest
+      - "9090:9090"   # Model streaming gRPC
+    logging: *logging
+
+  # GenT decompression collector — reconstructs traces from models
+  otelcol-decompress:
+    image: otelcol-gent:latest
+    container_name: otelcol-decompress
+    command: [ "--config=file:/etc/otelcol/config.yaml" ]
+    volumes:
+      - ./src/otel-collector/decompress-config-cloudlab.yaml:/etc/otelcol/config.yaml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      otelcol-compress:
+        condition: service_started
+      tempo-gent:
+        condition: service_started
 
   # Loki for log storage (Grafana Logs Drilldown)
   loki:

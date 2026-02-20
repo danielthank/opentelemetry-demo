@@ -1,7 +1,7 @@
 # Copyright The OpenTelemetry Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# CloudLab datasources - connects to services across nodes
+# CloudLab datasources for GenT-reconstructed traces
 
 apiVersion: 1
 
@@ -19,11 +19,11 @@ datasources:
         - datasourceUid: webstore-traces
           name: trace_id
 
-  # Tempo on node1 (original/raw traces)
+  # Tempo-gent on node1 (GenT-reconstructed traces)
   - name: Tempo
     uid: webstore-traces
     type: tempo
-    url: http://10.10.1.2:3200
+    url: http://10.10.1.2:3201
     editable: true
     isDefault: false
     jsonData:
